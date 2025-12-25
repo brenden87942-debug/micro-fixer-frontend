@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-const API = "http://localhost:3000";
+const API = "micro-fixer-backend-production.up.railway.app";
 
 function Input({ label, ...props }) {
   return (

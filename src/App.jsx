@@ -2,8 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 
 const API = "http://localhost:3000";
 
-/* ---------------- UI bits ---------------- */
-
 function Input({ label, ...props }) {
   return (
     <label style={{ display: "grid", gap: 6 }}>
@@ -21,40 +19,18 @@ function Input({ label, ...props }) {
   );
 }
 
-function Button({ children, style, disabled, ...props }) {
+function Button({ children, ...props }) {
   return (
     <button
       {...props}
-      disabled={disabled}
       style={{
         padding: 12,
         borderRadius: 12,
         border: "none",
         fontSize: 14,
-        fontWeight: 800,
-        cursor: disabled ? "not-allowed" : "pointer",
-        opacity: disabled ? 0.6 : 1,
-        ...style,
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-
-function Chip({ active, children, onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        padding: "8px 10px",
-        borderRadius: 999,
-        border: "1px solid #e5e7eb",
-        background: active ? "#111" : "white",
-        color: active ? "white" : "#111",
-        fontSize: 12,
-        fontWeight: 900,
+        fontWeight: 700,
         cursor: "pointer",
+        ...(props.style || {}),
       }}
     >
       {children}
@@ -62,16 +38,17 @@ function Chip({ active, children, onClick }) {
   );
 }
 
-function statusStyle(status) {
+function statusBadgeStyle(status) {
   const base = {
     display: "inline-block",
     fontSize: 11,
-    fontWeight: 900,
+    fontWeight: 800,
     padding: "6px 10px",
     borderRadius: 999,
-    width: "fit-content",
     letterSpacing: 0.3,
+    width: "fit-content",
   };
+
   switch (status) {
     case "requested":
       return { ...base, background: "#f3f4f6", color: "#374151" };
@@ -88,68 +65,58 @@ function statusStyle(status) {
   }
 }
 
-const dollars = (cents) => `$${(Number(cents || 0) / 100).toFixed(2)}`;
-
-/* ---------------- App ---------------- */
+function centsToDollars(cents) {
+  const n = Number(cents || 0);
+  return `$${(n / 100).toFixed(2)}`;
+}
 
 export default function App() {
   const [tab, setTab] = useState("login"); // login | tasks | create
   const [mode, setMode] = useState("user"); // user | worker
-  const isWorker = mode === "worker";
-
-  // Worker tabs inside Tasks
   const [workerView, setWorkerView] = useState("available"); // available | assigned | history
-  const [historyFilter, setHistoryFilter] = useState("completed"); // completed | cancelled | all
 
   const [token, setToken] = useState(localStorage.getItem("token") || "");
-  const [refreshToken, setRefreshToken] = useState(
-    localStorage.getItem("refreshToken") || ""
-  );
+  const [refreshToken, setRefreshToken] = useState(localStorage.getItem("refreshToken") || "");
   const authed = useMemo(() => !!token, [token]);
 
   const [email, setEmail] = useState("testuser2@example.com");
   const [password, setPassword] = useState("Pass123!");
 
   const [tasks, setTasks] = useState([]);
-  const [msg, setMsg] = useState(""); // banner message
-  const [busy, setBusy] = useState(false); // prevents double clicks
+  const [msg, setMsg] = useState("");
 
-  // Create task fields
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [category, setCategory] = useState("");
-  const [price, setPrice] = useState("");
-  const [address, setAddress] = useState("");
+  const [title, setTitle] = useState("Fix leaky faucet");
+  const [description, setDescription] = useState("Kitchen sink dripping");
+  const [category, setCategory] = useState("plumbing");
+  const [price, setPrice] = useState("2500");
+  const [address, setAddress] = useState("Phoenix, AZ");
 
-  function flash(text) {
-    setMsg(text);
-    window.clearTimeout(flash._t);
-    flash._t = window.setTimeout(() => setMsg(""), 3000);
-  }
+  const [totalEarnedCents, setTotalEarnedCents] = useState(0);
 
-  /* -------- API with auto refresh -------- */
+  const isWorker = mode === "worker";
 
-  async function api(path, options = {}, retry = false) {
+  // API helper with auto-refresh retry
+  async function api(path, options = {}, _retry = false) {
     const res = await fetch(`${API}${path}`, {
       ...options,
       headers: {
         "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(options.headers || {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
     });
 
     const data = await res.json().catch(() => ({}));
     const errText = String(data?.error || "").toLowerCase();
 
-    // refresh once if token bad
-    if (!retry && refreshToken && (errText.includes("expired") || errText.includes("invalid"))) {
+    if ((errText.includes("expired") || errText.includes("invalid")) && !_retry && refreshToken) {
       const r = await fetch(`${API}/api/auth/refresh`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refreshToken }),
       });
       const rd = await r.json().catch(() => ({}));
+
       if (r.ok && rd.ok && rd.token) {
         localStorage.setItem("token", rd.token);
         setToken(rd.token);
@@ -157,34 +124,135 @@ export default function App() {
       }
     }
 
-    if (!res.ok || data.ok === false) {
-      throw new Error(data?.error || "Request failed");
-    }
+    if (!res.ok || data.ok === false) throw new Error(data?.error || "Request failed");
     return data;
   }
 
-  /* -------- AUTH -------- */
-
   async function doLogin(e) {
     e.preventDefault();
-    setBusy(true);
+    setMsg("");
     try {
-      const d = await api("/api/auth/login", {
+      const data = await api("/api/auth/login", {
         method: "POST",
         body: JSON.stringify({ email, password }),
       });
 
-      localStorage.setItem("token", d.token);
-      localStorage.setItem("refreshToken", d.refreshToken || "");
-      setToken(d.token);
-      setRefreshToken(d.refreshToken || "");
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("refreshToken", data.refreshToken);
+      setToken(data.token);
+      setRefreshToken(data.refreshToken);
 
       setTab("tasks");
-      flash("Logged in ✅");
+      setMsg("Logged in ✅");
     } catch (err) {
-      flash(`Login failed: ${err.message}`);
-    } finally {
-      setBusy(false);
+      setMsg(`Login failed: ${err.message}`);
+    }
+  }
+
+  async function loadMine() {
+    setMsg("");
+    try {
+      const data = await api("/api/tasks/mine");
+      setTasks(data.tasks || []);
+      setMsg(`Loaded ${data.tasks?.length || 0} tasks ✅`);
+    } catch (err) {
+      setMsg(`Load failed: ${err.message}`);
+    }
+  }
+
+  async function loadAvailable() {
+    setMsg("");
+    try {
+      const data = await api("/api/tasks/available");
+      setTasks(data.tasks || []);
+      setMsg(`Loaded ${data.tasks?.length || 0} available jobs ✅`);
+    } catch (err) {
+      setMsg(`Load failed: ${err.message}`);
+    }
+  }
+
+  async function loadAssigned() {
+    setMsg("");
+    try {
+      const data = await api("/api/tasks/assigned");
+      setTasks(data.tasks || []);
+      setMsg(`Loaded ${data.tasks?.length || 0} my jobs ✅`);
+    } catch (err) {
+      setMsg(`Load failed: ${err.message}`);
+    }
+  }
+
+  async function loadHistory() {
+    setMsg("");
+    try {
+      const data = await api("/api/tasks/history");
+      setTasks(data.tasks || []);
+      setTotalEarnedCents(Number(data.totalEarnedCents || 0));
+      setMsg(`Loaded ${data.tasks?.length || 0} history items ✅`);
+    } catch (err) {
+      setMsg(`Load failed: ${err.message}`);
+    }
+  }
+
+  async function acceptTask(task) {
+    const ok = window.confirm(`Accept this job for ${centsToDollars(task.price_cents)}?\n\n${task.title}`);
+    if (!ok) return;
+
+    setMsg("");
+    try {
+      const data = await api(`/api/tasks/${task.id}/accept`, { method: "POST" });
+      setMsg(`Accepted job #${data.task.id} ✅`);
+      setWorkerView("assigned");
+      await loadAssigned();
+    } catch (err) {
+      setMsg(`Accept failed: ${err.message}`);
+    }
+  }
+
+  async function startTask(id) {
+    setMsg("");
+    try {
+      const data = await api(`/api/tasks/${id}/start`, { method: "POST" });
+      setMsg(`Started job #${data.task.id} ✅`);
+      await loadAssigned();
+    } catch (err) {
+      setMsg(`Start failed: ${err.message}`);
+    }
+  }
+
+  async function completeTask(id) {
+    setMsg("");
+    try {
+      const data = await api(`/api/tasks/${id}/complete`, { method: "POST" });
+      setMsg(`Completed job #${data.task.id} ✅`);
+      await loadAssigned();
+    } catch (err) {
+      setMsg(`Complete failed: ${err.message}`);
+    }
+  }
+
+  async function createTask(e) {
+    e.preventDefault();
+    setMsg("");
+    try {
+      const body = {
+        title,
+        description,
+        category,
+        price_cents: Number(price),
+        lat: 33.4484,
+        lng: -112.074,
+        address,
+      };
+      const data = await api("/api/tasks", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      setMsg(`Created task #${data.task.id} ✅`);
+      setTab("tasks");
+      await loadMine();
+    } catch (err) {
+      setMsg(`Create failed: ${err.message}`);
     }
   }
 
@@ -194,190 +262,56 @@ export default function App() {
     setToken("");
     setRefreshToken("");
     setTasks([]);
+    setTotalEarnedCents(0);
     setTab("login");
-    flash("Logged out");
+    setMsg("Logged out");
   }
 
-  /* -------- LOADERS -------- */
-
-  async function loadMine() {
-    const d = await api("/api/tasks/mine");
-    return d.tasks || [];
-  }
-  async function loadAvailable() {
-    const d = await api("/api/tasks/available");
-    return d.tasks || [];
-  }
-  async function loadAssigned() {
-    const d = await api("/api/tasks/assigned");
-    return d.tasks || [];
-  }
-  async function loadHistory() {
-    // must exist in backend: GET /api/tasks/history
-    const d = await api("/api/tasks/history");
-    return d.tasks || [];
-  }
-
-  /* -------- ACTIONS -------- */
-
-  async function acceptTask(t) {
-    if (busy) return;
-    const ok = window.confirm(`Accept this job for ${dollars(t.price_cents)}?\n\n${t.title}`);
-    if (!ok) return;
-
-    setBusy(true);
-    try {
-      await api(`/api/tasks/${t.id}/accept`, { method: "POST" });
-      flash("Accepted ✅");
-      setWorkerView("assigned");
-    } catch (err) {
-      flash(`Accept failed: ${err.message}`);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function startTask(t) {
-    if (busy) return;
-    setBusy(true);
-    try {
-      await api(`/api/tasks/${t.id}/start`, { method: "POST" });
-      flash("Started ✅");
-    } catch (err) {
-      flash(`Start failed: ${err.message}`);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function completeTask(t) {
-    if (busy) return;
-    const ok = window.confirm(`Mark complete?\n\n${t.title}`);
-    if (!ok) return;
-
-    setBusy(true);
-    try {
-      await api(`/api/tasks/${t.id}/complete`, { method: "POST" });
-      flash("Completed ✅");
-    } catch (err) {
-      flash(`Complete failed: ${err.message}`);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function createTask(e) {
-    e.preventDefault();
-    if (busy) return;
-
-    setBusy(true);
-    try {
-      await api("/api/tasks", {
-        method: "POST",
-        body: JSON.stringify({
-          title,
-          description,
-          category,
-          price_cents: Number(price),
-          lat: 33.4484,
-          lng: -112.074,
-          address,
-        }),
-      });
-      flash("Task created ✅");
-      setTab("tasks");
-      setTitle("");
-      setDescription("");
-      setCategory("");
-      setPrice("");
-      setAddress("");
-    } catch (err) {
-      flash(`Create failed: ${err.message}`);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  /* -------- AUTO LOAD -------- */
-
+  // Auto-load list on tab/mode/view changes
   useEffect(() => {
-    let alive = true;
+    if (!authed) return;
+    if (tab !== "tasks") return;
 
-    async function run() {
-      if (!authed || tab !== "tasks") return;
-      setBusy(true);
-      try {
-        let list = [];
-        if (!isWorker) {
-          list = await loadMine();
-        } else if (workerView === "available") {
-          list = await loadAvailable();
-        } else if (workerView === "assigned") {
-          list = await loadAssigned();
-        } else {
-          list = await loadHistory();
-        }
-
-        // frontend-only history filter polish
-        if (isWorker && workerView === "history") {
-          if (historyFilter === "completed") {
-            list = list.filter((t) => t.status === "completed");
-          } else if (historyFilter === "cancelled") {
-            list = list.filter((t) => t.status === "cancelled");
-          } // all = no filter
-        }
-
-        if (alive) setTasks(list);
-      } catch (err) {
-        if (alive) flash(`Load failed: ${err.message}`);
-      } finally {
-        if (alive) setBusy(false);
-      }
+    if (isWorker) {
+      if (workerView === "assigned") loadAssigned();
+      else if (workerView === "history") loadHistory();
+      else loadAvailable();
+    } else {
+      loadMine();
     }
-
-    run();
-    return () => {
-      alive = false;
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed, tab, mode, workerView, historyFilter]);
+  }, [authed, tab, mode, workerView]);
 
-  /* -------- UI -------- */
-
-  const subtitle = !authed
-    ? "Please log in"
-    : !isWorker
-    ? "User Mode"
-    : workerView === "available"
-    ? "Worker • Available Jobs"
-    : workerView === "assigned"
-    ? "Worker • My Jobs"
-    : "Worker • History";
+  const headerSubtitle = isWorker
+    ? workerView === "available"
+      ? "Worker Mode • Available Jobs"
+      : workerView === "assigned"
+      ? "Worker Mode • My Jobs"
+      : "Worker Mode • History"
+    : "User Mode • Mobile-first web app";
 
   return (
     <div style={{ minHeight: "100vh", background: "#f6f7fb", display: "grid", placeItems: "center", padding: 16 }}>
-      <div style={{ width: "100%", maxWidth: 440, background: "white", borderRadius: 24, boxShadow: "0 10px 30px rgba(0,0,0,0.08)", overflow: "hidden" }}>
+      <div style={{ width: "100%", maxWidth: 420, background: "white", borderRadius: 24, boxShadow: "0 10px 30px rgba(0,0,0,0.08)", overflow: "hidden" }}>
         <div style={{ padding: 18, borderBottom: "1px solid #eee" }}>
           <div style={{ fontSize: 18, fontWeight: 900 }}>Micro Fixer</div>
-          <div style={{ fontSize: 12, opacity: 0.7 }}>{subtitle}</div>
+          <div style={{ fontSize: 12, opacity: 0.7 }}>{headerSubtitle}</div>
         </div>
 
-        <div style={{ padding: 18, display: "grid", gap: 12 }}>
-          {msg ? (
+        <div style={{ padding: 18, display: "grid", gap: 14 }}>
+          {msg && (
             <div style={{ padding: 12, borderRadius: 14, background: "#f2f5ff", fontSize: 13 }}>
               {msg}
             </div>
-          ) : null}
+          )}
 
           {!authed || tab === "login" ? (
             <form onSubmit={doLogin} style={{ display: "grid", gap: 12 }}>
               <Input label="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
               <Input label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-              <Button disabled={busy} type="submit" style={{ background: "#111", color: "white" }}>
-                {busy ? "Logging in..." : "Login"}
-              </Button>
+              <Button type="submit" style={{ background: "#111", color: "white" }}>Login</Button>
               <div style={{ fontSize: 12, opacity: 0.7 }}>
-                Worker login: <b>worker1@example.com</b>
+                Tip: use <b>worker1@example.com</b> in Worker mode.
               </div>
             </form>
           ) : tab === "create" ? (
@@ -387,65 +321,52 @@ export default function App() {
               <Input label="Category" value={category} onChange={(e) => setCategory(e.target.value)} />
               <Input label="Price (cents)" value={price} onChange={(e) => setPrice(e.target.value)} />
               <Input label="Address" value={address} onChange={(e) => setAddress(e.target.value)} />
-              <Button disabled={busy} type="submit" style={{ background: "#111", color: "white" }}>
-                {busy ? "Creating..." : "Create Task"}
-              </Button>
+              <Button type="submit" style={{ background: "#111", color: "white" }}>Create Task</Button>
             </form>
           ) : (
-            <>
-              {/* Worker top tabs */}
+            <div style={{ display: "grid", gap: 10 }}>
+              {/* Worker segmented controls */}
               {isWorker ? (
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-                  <Button
-                    disabled={busy}
-                    onClick={() => setWorkerView("available")}
-                    style={{ background: workerView === "available" ? "#111" : "#444", color: "white" }}
-                  >
-                    Available
-                  </Button>
-                  <Button
-                    disabled={busy}
-                    onClick={() => setWorkerView("assigned")}
-                    style={{ background: workerView === "assigned" ? "#111" : "#444", color: "white" }}
-                  >
-                    My Jobs
-                  </Button>
-                  <Button
-                    disabled={busy}
-                    onClick={() => setWorkerView("history")}
-                    style={{ background: workerView === "history" ? "#111" : "#444", color: "white" }}
-                  >
-                    History
-                  </Button>
-                </div>
+                <>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                    <Button
+                      onClick={() => setWorkerView("available")}
+                      style={{ background: workerView === "available" ? "#111" : "#444", color: "white" }}
+                    >
+                      Available
+                    </Button>
+                    <Button
+                      onClick={() => setWorkerView("assigned")}
+                      style={{ background: workerView === "assigned" ? "#111" : "#444", color: "white" }}
+                    >
+                      My Jobs
+                    </Button>
+                    <Button
+                      onClick={() => setWorkerView("history")}
+                      style={{ background: workerView === "history" ? "#111" : "#444", color: "white" }}
+                    >
+                      History
+                    </Button>
+                  </div>
+
+                  {workerView === "history" && (
+                    <div style={{ padding: 12, borderRadius: 16, border: "1px solid #eee", fontSize: 13 }}>
+                      <div style={{ fontWeight: 900, marginBottom: 6 }}>Total Earned</div>
+                      <div style={{ fontSize: 20, fontWeight: 900 }}>{centsToDollars(totalEarnedCents)}</div>
+                      <div style={{ fontSize: 12, opacity: 0.7 }}>Sum of completed jobs</div>
+                    </div>
+                  )}
+                </>
               ) : (
-                <Button disabled={busy} onClick={() => {}} style={{ background: "#111", color: "white" }}>
-                  {busy ? "Loading..." : "My Tasks"}
+                <Button onClick={loadMine} style={{ background: "#111", color: "white" }}>
+                  Refresh My Tasks
                 </Button>
               )}
 
-              {/* History filters */}
-              {isWorker && workerView === "history" ? (
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <Chip active={historyFilter === "completed"} onClick={() => setHistoryFilter("completed")}>
-                    Completed
-                  </Chip>
-                  <Chip active={historyFilter === "cancelled"} onClick={() => setHistoryFilter("cancelled")}>
-                    Cancelled
-                  </Chip>
-                  <Chip active={historyFilter === "all"} onClick={() => setHistoryFilter("all")}>
-                    All
-                  </Chip>
-                </div>
-              ) : null}
-
-              {/* List */}
-              {busy && tasks.length === 0 ? (
-                <div style={{ fontSize: 13, opacity: 0.7 }}>Loading...</div>
-              ) : tasks.length === 0 ? (
-                <div style={{ fontSize: 13, opacity: 0.7 }}>No tasks.</div>
+              {tasks.length === 0 ? (
+                <div style={{ fontSize: 13, opacity: 0.7 }}>No tasks yet.</div>
               ) : (
-                <div style={{ display: "grid", gap: 10 }}>
+                <>
                   {tasks.map((t) => (
                     <div
                       key={t.id}
@@ -457,16 +378,16 @@ export default function App() {
                         gap: 8,
                       }}
                     >
-                      <div style={statusStyle(t.status)}>{String(t.status).toUpperCase()}</div>
+                      <div style={statusBadgeStyle(t.status)}>{String(t.status).toUpperCase()}</div>
 
                       <div style={{ display: "grid", gap: 4 }}>
-                        <div style={{ fontSize: 14, fontWeight: 900 }}>{t.title}</div>
+                        <b style={{ fontSize: 14 }}>{t.title}</b>
                         <div style={{ fontSize: 12, opacity: 0.9 }}>{t.description}</div>
                       </div>
 
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+                      <div style={{ fontSize: 12, display: "flex", justifyContent: "space-between" }}>
                         <span>
-                          Price: <b>{dollars(t.price_cents)}</b>
+                          Price: <b>{centsToDollars(t.price_cents)}</b>
                         </span>
                         {typeof t.distance_km === "number" && t.distance_km !== 9999 ? (
                           <span>{t.distance_km.toFixed(1)} km</span>
@@ -475,35 +396,33 @@ export default function App() {
 
                       <div style={{ fontSize: 12, opacity: 0.85 }}>{t.address}</div>
 
-                      {/* Actions */}
-                      {isWorker && workerView === "available" && t.status === "requested" ? (
-                        <Button disabled={busy} onClick={() => acceptTask(t)} style={{ background: "#111", color: "white" }}>
+                      {/* Worker actions */}
+                      {isWorker && workerView === "available" && t.status === "requested" && (
+                        <Button onClick={() => acceptTask(t)} style={{ background: "#111", color: "white" }}>
                           Accept
                         </Button>
-                      ) : null}
+                      )}
 
-                      {isWorker && workerView === "assigned" && t.status === "assigned" ? (
-                        <Button disabled={busy} onClick={() => startTask(t)} style={{ background: "#111", color: "white" }}>
+                      {isWorker && workerView === "assigned" && t.status === "assigned" && (
+                        <Button onClick={() => startTask(t.id)} style={{ background: "#111", color: "white" }}>
                           Start
                         </Button>
-                      ) : null}
+                      )}
 
-                      {isWorker && workerView === "assigned" && t.status === "in_progress" ? (
-                        <Button disabled={busy} onClick={() => completeTask(t)} style={{ background: "#111", color: "white" }}>
+                      {isWorker && workerView === "assigned" && t.status === "in_progress" && (
+                        <Button onClick={() => completeTask(t.id)} style={{ background: "#111", color: "white" }}>
                           Complete
                         </Button>
-                      ) : null}
-
-                      {/* User can see completed tasks and just read them */}
+                      )}
                     </div>
                   ))}
-                </div>
+                </>
               )}
-            </>
+            </div>
           )}
         </div>
 
-        {/* Bottom nav */}
+        {/* Bottom navigation */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", borderTop: "1px solid #eee" }}>
           <button
             onClick={() => {
@@ -516,6 +435,7 @@ export default function App() {
           >
             Tasks
           </button>
+
           <button
             onClick={() => {
               setMode("user");
@@ -526,6 +446,7 @@ export default function App() {
           >
             Create
           </button>
+
           <button
             onClick={() => {
               setMode("worker");
@@ -537,6 +458,7 @@ export default function App() {
           >
             Worker
           </button>
+
           <button onClick={logout} style={{ padding: 14 }}>
             Logout
           </button>

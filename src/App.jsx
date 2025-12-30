@@ -76,7 +76,9 @@ export default function App() {
   const [workerView, setWorkerView] = useState("available"); // available | assigned | history
 
   const [token, setToken] = useState(localStorage.getItem("token") || "");
-  const [refreshToken, setRefreshToken] = useState(localStorage.getItem("refreshToken") || "");
+  const [refreshToken, setRefreshToken] = useState(
+    localStorage.getItem("refreshToken") || ""
+  );
   const authed = useMemo(() => !!token, [token]);
 
   const [email, setEmail] = useState("testuser2@example.com");
@@ -95,8 +97,8 @@ export default function App() {
 
   const isWorker = mode === "worker";
 
-  // API helper with auto-refresh retry
-  async function api(path, options = {}, _retry = false) {
+  // ✅ ONE API helper: sends token + auto refreshes token once if expired
+  async function api(path, options = {}, retry = false) {
     const res = await fetch(`${API}${path}`, {
       ...options,
       headers: {
@@ -107,14 +109,20 @@ export default function App() {
     });
 
     const data = await res.json().catch(() => ({}));
-    const errText = String(data?.error || "").toLowerCase();
+    const err = String(data?.error || "").toLowerCase();
 
-    if ((errText.includes("expired") || errText.includes("invalid")) && !_retry && refreshToken) {
+    // auto refresh token once
+    if (
+      !retry &&
+      refreshToken &&
+      (err.includes("expired") || err.includes("invalid"))
+    ) {
       const r = await fetch(`${API}/api/auth/refresh`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refreshToken }),
       });
+
       const rd = await r.json().catch(() => ({}));
 
       if (r.ok && rd.ok && rd.token) {
@@ -124,7 +132,10 @@ export default function App() {
       }
     }
 
-    if (!res.ok || data.ok === false) throw new Error(data?.error || "Request failed");
+    if (!res.ok || data.ok === false) {
+      throw new Error(data?.error || "Request failed");
+    }
+
     return data;
   }
 
@@ -195,7 +206,9 @@ export default function App() {
   }
 
   async function acceptTask(task) {
-    const ok = window.confirm(`Accept this job for ${centsToDollars(task.price_cents)}?\n\n${task.title}`);
+    const ok = window.confirm(
+      `Accept this job for ${centsToDollars(task.price_cents)}?\n\n${task.title}`
+    );
     if (!ok) return;
 
     setMsg("");
@@ -244,10 +257,12 @@ export default function App() {
         lng: -112.074,
         address,
       };
+
       const data = await api("/api/tasks", {
         method: "POST",
         body: JSON.stringify(body),
       });
+
       setMsg(`Created task #${data.task.id} ✅`);
       setTab("tasks");
       await loadMine();
@@ -267,7 +282,7 @@ export default function App() {
     setMsg("Logged out");
   }
 
-  // Auto-load list on tab/mode/view changes
+  // ✅ Auto-load when in Tasks tab
   useEffect(() => {
     if (!authed) return;
     if (tab !== "tasks") return;
@@ -291,8 +306,25 @@ export default function App() {
     : "User Mode • Mobile-first web app";
 
   return (
-    <div style={{ minHeight: "100vh", background: "#f6f7fb", display: "grid", placeItems: "center", padding: 16 }}>
-      <div style={{ width: "100%", maxWidth: 420, background: "white", borderRadius: 24, boxShadow: "0 10px 30px rgba(0,0,0,0.08)", overflow: "hidden" }}>
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#f6f7fb",
+        display: "grid",
+        placeItems: "center",
+        padding: 16,
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 420,
+          background: "white",
+          borderRadius: 24,
+          boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
+          overflow: "hidden",
+        }}
+      >
         <div style={{ padding: 18, borderBottom: "1px solid #eee" }}>
           <div style={{ fontSize: 18, fontWeight: 900 }}>Micro Fixer</div>
           <div style={{ fontSize: 12, opacity: 0.7 }}>{headerSubtitle}</div>
@@ -300,16 +332,36 @@ export default function App() {
 
         <div style={{ padding: 18, display: "grid", gap: 14 }}>
           {msg && (
-            <div style={{ padding: 12, borderRadius: 14, background: "#f2f5ff", fontSize: 13 }}>
+            <div
+              style={{
+                padding: 12,
+                borderRadius: 14,
+                background: "#f2f5ff",
+                fontSize: 13,
+              }}
+            >
               {msg}
             </div>
           )}
 
           {!authed || tab === "login" ? (
             <form onSubmit={doLogin} style={{ display: "grid", gap: 12 }}>
-              <Input label="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-              <Input label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-              <Button type="submit" style={{ background: "#111", color: "white" }}>Login</Button>
+              <Input
+                label="Email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+              />
+              <Input
+                label="Password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+              />
+              <Button type="submit" style={{ background: "#111", color: "white" }}>
+                Login
+              </Button>
               <div style={{ fontSize: 12, opacity: 0.7 }}>
                 Tip: use <b>worker1@example.com</b> in Worker mode.
               </div>
@@ -317,42 +369,65 @@ export default function App() {
           ) : tab === "create" ? (
             <form onSubmit={createTask} style={{ display: "grid", gap: 12 }}>
               <Input label="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
-              <Input label="Description" value={description} onChange={(e) => setDescription(e.target.value)} />
+              <Input
+                label="Description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
               <Input label="Category" value={category} onChange={(e) => setCategory(e.target.value)} />
               <Input label="Price (cents)" value={price} onChange={(e) => setPrice(e.target.value)} />
               <Input label="Address" value={address} onChange={(e) => setAddress(e.target.value)} />
-              <Button type="submit" style={{ background: "#111", color: "white" }}>Create Task</Button>
+              <Button type="submit" style={{ background: "#111", color: "white" }}>
+                Create Task
+              </Button>
             </form>
           ) : (
             <div style={{ display: "grid", gap: 10 }}>
-              {/* Worker segmented controls */}
               {isWorker ? (
                 <>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
                     <Button
                       onClick={() => setWorkerView("available")}
-                      style={{ background: workerView === "available" ? "#111" : "#444", color: "white" }}
+                      style={{
+                        background: workerView === "available" ? "#111" : "#444",
+                        color: "white",
+                      }}
                     >
                       Available
                     </Button>
                     <Button
                       onClick={() => setWorkerView("assigned")}
-                      style={{ background: workerView === "assigned" ? "#111" : "#444", color: "white" }}
+                      style={{
+                        background: workerView === "assigned" ? "#111" : "#444",
+                        color: "white",
+                      }}
                     >
                       My Jobs
                     </Button>
                     <Button
                       onClick={() => setWorkerView("history")}
-                      style={{ background: workerView === "history" ? "#111" : "#444", color: "white" }}
+                      style={{
+                        background: workerView === "history" ? "#111" : "#444",
+                        color: "white",
+                      }}
                     >
                       History
                     </Button>
                   </div>
 
                   {workerView === "history" && (
-                    <div style={{ padding: 12, borderRadius: 16, border: "1px solid #eee", fontSize: 13 }}>
+                    <div
+                      style={{
+                        padding: 12,
+                        borderRadius: 16,
+                        border: "1px solid #eee",
+                        fontSize: 13,
+                      }}
+                    >
                       <div style={{ fontWeight: 900, marginBottom: 6 }}>Total Earned</div>
-                      <div style={{ fontSize: 20, fontWeight: 900 }}>{centsToDollars(totalEarnedCents)}</div>
+                      <div style={{ fontSize: 20, fontWeight: 900 }}>
+                        {centsToDollars(totalEarnedCents)}
+                      </div>
                       <div style={{ fontSize: 12, opacity: 0.7 }}>Sum of completed jobs</div>
                     </div>
                   )}
@@ -378,7 +453,9 @@ export default function App() {
                         gap: 8,
                       }}
                     >
-                      <div style={statusBadgeStyle(t.status)}>{String(t.status).toUpperCase()}</div>
+                      <div style={statusBadgeStyle(t.status)}>
+                        {String(t.status).toUpperCase()}
+                      </div>
 
                       <div style={{ display: "grid", gap: 4 }}>
                         <b style={{ fontSize: 14 }}>{t.title}</b>
@@ -396,7 +473,6 @@ export default function App() {
 
                       <div style={{ fontSize: 12, opacity: 0.85 }}>{t.address}</div>
 
-                      {/* Worker actions */}
                       {isWorker && workerView === "available" && t.status === "requested" && (
                         <Button onClick={() => acceptTask(t)} style={{ background: "#111", color: "white" }}>
                           Accept
@@ -422,8 +498,13 @@ export default function App() {
           )}
         </div>
 
-        {/* Bottom navigation */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", borderTop: "1px solid #eee" }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr 1fr 1fr",
+            borderTop: "1px solid #eee",
+          }}
+        >
           <button
             onClick={() => {
               setMode("user");

@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 
-const API = "https://micro-fixer-backend-production.up.railway.app";
+// ✅ API selection:
+// - Netlify/Vite env: VITE_API_URL
+// - DEV fallback: localhost
+// - PROD fallback: Railway
+const API =
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.DEV
+    ? "http://localhost:3000"
+    : "https://micro-fixer-backend-production.up.railway.app");
 
 function Input({ label, ...props }) {
   return (
@@ -81,7 +89,7 @@ export default function App() {
   );
   const authed = useMemo(() => !!token, [token]);
 
-  const [email, setEmail] = useState("testuser2@example.com");
+  const [email, setEmail] = useState("user1@example.com");
   const [password, setPassword] = useState("Pass123!");
 
   const [tasks, setTasks] = useState([]);
@@ -97,8 +105,8 @@ export default function App() {
 
   const isWorker = mode === "worker";
 
-  // ✅ ONE API helper: sends token + auto refreshes token once if expired
-  async function api(path, options = {}, retry = false) {
+  // ✅ API helper + auto refresh token retry
+  async function api(path, options = {}, _retry = false) {
     const res = await fetch(`${API}${path}`, {
       ...options,
       headers: {
@@ -109,33 +117,40 @@ export default function App() {
     });
 
     const data = await res.json().catch(() => ({}));
-    const err = String(data?.error || "").toLowerCase();
+    const errText = String(data?.error || "").toLowerCase();
 
-    // auto refresh token once
+    // ✅ If token is expired/invalid, try refresh ONCE
     if (
-      !retry &&
-      refreshToken &&
-      (err.includes("expired") || err.includes("invalid"))
+      (errText.includes("expired") || errText.includes("invalid")) &&
+      !_retry &&
+      refreshToken
     ) {
       const r = await fetch(`${API}/api/auth/refresh`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refreshToken }),
       });
-
       const rd = await r.json().catch(() => ({}));
 
       if (r.ok && rd.ok && rd.token) {
+        // ✅ IMPORTANT: update BOTH localStorage AND state
         localStorage.setItem("token", rd.token);
         setToken(rd.token);
+
+        if (rd.refreshToken) {
+          localStorage.setItem("refreshToken", rd.refreshToken);
+          setRefreshToken(rd.refreshToken);
+        }
+
         return api(path, options, true);
+      } else {
+        // refresh failed -> log out
+        logout();
+        throw new Error("Session expired. Please log in again.");
       }
     }
 
-    if (!res.ok || data.ok === false) {
-      throw new Error(data?.error || "Request failed");
-    }
-
+    if (!res.ok || data.ok === false) throw new Error(data?.error || "Request failed");
     return data;
   }
 
@@ -257,12 +272,10 @@ export default function App() {
         lng: -112.074,
         address,
       };
-
       const data = await api("/api/tasks", {
         method: "POST",
         body: JSON.stringify(body),
       });
-
       setMsg(`Created task #${data.task.id} ✅`);
       setTab("tasks");
       await loadMine();
@@ -282,7 +295,7 @@ export default function App() {
     setMsg("Logged out");
   }
 
-  // ✅ Auto-load when in Tasks tab
+  // ✅ Auto-load on view changes
   useEffect(() => {
     if (!authed) return;
     if (tab !== "tasks") return;
@@ -328,6 +341,11 @@ export default function App() {
         <div style={{ padding: 18, borderBottom: "1px solid #eee" }}>
           <div style={{ fontSize: 18, fontWeight: 900 }}>Micro Fixer</div>
           <div style={{ fontSize: 12, opacity: 0.7 }}>{headerSubtitle}</div>
+
+          {/* ✅ Shows which API is actually being used */}
+          <div style={{ fontSize: 11, opacity: 0.55, marginTop: 6 }}>
+            API: {API}
+          </div>
         </div>
 
         <div style={{ padding: 18, display: "grid", gap: 14 }}>
@@ -346,24 +364,45 @@ export default function App() {
 
           {!authed || tab === "login" ? (
             <form onSubmit={doLogin} style={{ display: "grid", gap: 12 }}>
-              <Input
-                label="Email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoComplete="email"
-              />
+              <Input label="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
               <Input
                 label="Password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
               />
               <Button type="submit" style={{ background: "#111", color: "white" }}>
                 Login
               </Button>
-              <div style={{ fontSize: 12, opacity: 0.7 }}>
-                Tip: use <b>worker1@example.com</b> in Worker mode.
+
+              <div style={{ fontSize: 12, opacity: 0.75 }}>
+                Quick picks:
+                <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      setMode("worker");
+                      setWorkerView("available");
+                      setEmail("worker1@example.com");
+                      setPassword("Pass123!");
+                    }}
+                    style={{ background: "#444", color: "white" }}
+                  >
+                    Use Worker (worker1@example.com)
+                  </Button>
+
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      setMode("user");
+                      setEmail("user1@example.com");
+                      setPassword("Pass123!");
+                    }}
+                    style={{ background: "#444", color: "white" }}
+                  >
+                    Use User (user1@example.com)
+                  </Button>
+                </div>
               </div>
             </form>
           ) : tab === "create" ? (
@@ -388,42 +427,26 @@ export default function App() {
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
                     <Button
                       onClick={() => setWorkerView("available")}
-                      style={{
-                        background: workerView === "available" ? "#111" : "#444",
-                        color: "white",
-                      }}
+                      style={{ background: workerView === "available" ? "#111" : "#444", color: "white" }}
                     >
                       Available
                     </Button>
                     <Button
                       onClick={() => setWorkerView("assigned")}
-                      style={{
-                        background: workerView === "assigned" ? "#111" : "#444",
-                        color: "white",
-                      }}
+                      style={{ background: workerView === "assigned" ? "#111" : "#444", color: "white" }}
                     >
                       My Jobs
                     </Button>
                     <Button
                       onClick={() => setWorkerView("history")}
-                      style={{
-                        background: workerView === "history" ? "#111" : "#444",
-                        color: "white",
-                      }}
+                      style={{ background: workerView === "history" ? "#111" : "#444", color: "white" }}
                     >
                       History
                     </Button>
                   </div>
 
                   {workerView === "history" && (
-                    <div
-                      style={{
-                        padding: 12,
-                        borderRadius: 16,
-                        border: "1px solid #eee",
-                        fontSize: 13,
-                      }}
-                    >
+                    <div style={{ padding: 12, borderRadius: 16, border: "1px solid #eee", fontSize: 13 }}>
                       <div style={{ fontWeight: 900, marginBottom: 6 }}>Total Earned</div>
                       <div style={{ fontSize: 20, fontWeight: 900 }}>
                         {centsToDollars(totalEarnedCents)}
@@ -453,9 +476,7 @@ export default function App() {
                         gap: 8,
                       }}
                     >
-                      <div style={statusBadgeStyle(t.status)}>
-                        {String(t.status).toUpperCase()}
-                      </div>
+                      <div style={statusBadgeStyle(t.status)}>{String(t.status).toUpperCase()}</div>
 
                       <div style={{ display: "grid", gap: 4 }}>
                         <b style={{ fontSize: 14 }}>{t.title}</b>
@@ -498,19 +519,13 @@ export default function App() {
           )}
         </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr 1fr 1fr",
-            borderTop: "1px solid #eee",
-          }}
-        >
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", borderTop: "1px solid #eee" }}>
           <button
             onClick={() => {
               setMode("user");
               setWorkerView("available");
               setTab("tasks");
-              setEmail("testuser2@example.com");
+              setEmail("user1@example.com");
             }}
             style={{ padding: 14 }}
           >
@@ -521,7 +536,7 @@ export default function App() {
             onClick={() => {
               setMode("user");
               setTab("create");
-              setEmail("testuser2@example.com");
+              setEmail("user1@example.com");
             }}
             style={{ padding: 14 }}
           >

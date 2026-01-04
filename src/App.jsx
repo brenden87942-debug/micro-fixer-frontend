@@ -2,12 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 
 // ✅ API base url:
 // - Netlify: set VITE_API_URL = https://micro-fixer-backend-production.up.railway.app
-// - Local dev: defaults to http://localhost:3000
 const API =
   import.meta.env.VITE_API_URL ||
-  (import.meta.env.DEV
-    ? "http://localhost:3000"
-    : "https://micro-fixer-backend-production.up.railway.app");
+  "https://micro-fixer-backend-production.up.railway.app";
 
 function Input({ label, ...props }) {
   return (
@@ -83,7 +80,9 @@ export default function App() {
   const [workerView, setWorkerView] = useState("available"); // available | assigned | history
 
   const [token, setToken] = useState(localStorage.getItem("token") || "");
-  const [refreshToken, setRefreshToken] = useState(localStorage.getItem("refreshToken") || "");
+  const [refreshToken, setRefreshToken] = useState(
+    localStorage.getItem("refreshToken") || ""
+  );
   const authed = useMemo(() => !!token, [token]);
 
   const [email, setEmail] = useState("user1@example.com");
@@ -102,20 +101,37 @@ export default function App() {
 
   const isWorker = mode === "worker";
 
+  function logout() {
+    localStorage.removeItem("token");
+    localStorage.removeItem("refreshToken");
+    setToken("");
+    setRefreshToken("");
+    setTasks([]);
+    setTotalEarnedCents(0);
+    setTab("login");
+    setMsg("Logged out");
+  }
+
+  // ✅ Improved API helper:
+  // - attaches Bearer token
+  // - refreshes on HTTP 401 (reliable)
+  // - retries original request once
+  // - logs out cleanly if refresh fails
   async function api(path, options = {}, _retry = false) {
-    const res = await fetch(`${API}${path}`, {
-      ...options,
-      headers: {
-        "Content-Type": "application/json",
-        ...(options.headers || {}),
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-    });
+    const doFetch = (tok) =>
+      fetch(`${API}${path}`, {
+        ...options,
+        headers: {
+          "Content-Type": "application/json",
+          ...(options.headers || {}),
+          ...(tok ? { Authorization: `Bearer ${tok}` } : {}),
+        },
+      });
 
+    const res = await doFetch(token);
     const data = await res.json().catch(() => ({}));
-    const errText = String(data?.error || "").toLowerCase();
 
-    if ((errText.includes("expired") || errText.includes("invalid")) && !_retry && refreshToken) {
+    if (res.status === 401 && !_retry && refreshToken) {
       const r = await fetch(`${API}/api/auth/refresh`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -126,7 +142,16 @@ export default function App() {
       if (r.ok && rd.ok && rd.token) {
         localStorage.setItem("token", rd.token);
         setToken(rd.token);
-        return api(path, options, true);
+
+        const res2 = await doFetch(rd.token);
+        const data2 = await res2.json().catch(() => ({}));
+        if (!res2.ok || data2.ok === false) {
+          throw new Error(data2?.error || "Request failed");
+        }
+        return data2;
+      } else {
+        logout();
+        throw new Error(rd?.error || "Session expired. Please log in again.");
       }
     }
 
@@ -201,7 +226,9 @@ export default function App() {
   }
 
   async function acceptTask(task) {
-    const ok = window.confirm(`Accept this job for ${centsToDollars(task.price_cents)}?\n\n${task.title}`);
+    const ok = window.confirm(
+      `Accept this job for ${centsToDollars(task.price_cents)}?\n\n${task.title}`
+    );
     if (!ok) return;
 
     setMsg("");
@@ -259,17 +286,6 @@ export default function App() {
     }
   }
 
-  function logout() {
-    localStorage.removeItem("token");
-    localStorage.removeItem("refreshToken");
-    setToken("");
-    setRefreshToken("");
-    setTasks([]);
-    setTotalEarnedCents(0);
-    setTab("login");
-    setMsg("Logged out");
-  }
-
   useEffect(() => {
     if (!authed) return;
     if (tab !== "tasks") return;
@@ -293,8 +309,25 @@ export default function App() {
     : "User Mode • Mobile-first web app";
 
   return (
-    <div style={{ minHeight: "100vh", background: "#f6f7fb", display: "grid", placeItems: "center", padding: 16 }}>
-      <div style={{ width: "100%", maxWidth: 420, background: "white", borderRadius: 24, boxShadow: "0 10px 30px rgba(0,0,0,0.08)", overflow: "hidden" }}>
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#f6f7fb",
+        display: "grid",
+        placeItems: "center",
+        padding: 16,
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 420,
+          background: "white",
+          borderRadius: 24,
+          boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
+          overflow: "hidden",
+        }}
+      >
         <div style={{ padding: 18, borderBottom: "1px solid #eee" }}>
           <div style={{ fontSize: 18, fontWeight: 900 }}>Micro Fixer</div>
           <div style={{ fontSize: 12, opacity: 0.7 }}>{headerSubtitle}</div>
@@ -304,13 +337,31 @@ export default function App() {
         </div>
 
         <div style={{ padding: 18, display: "grid", gap: 14 }}>
-          {msg && <div style={{ padding: 12, borderRadius: 14, background: "#f2f5ff", fontSize: 13 }}>{msg}</div>}
+          {msg && (
+            <div
+              style={{
+                padding: 12,
+                borderRadius: 14,
+                background: "#f2f5ff",
+                fontSize: 13,
+              }}
+            >
+              {msg}
+            </div>
+          )}
 
           {!authed || tab === "login" ? (
             <form onSubmit={doLogin} style={{ display: "grid", gap: 12 }}>
               <Input label="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-              <Input label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-              <Button type="submit" style={{ background: "#111", color: "white" }}>Login</Button>
+              <Input
+                label="Password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+              <Button type="submit" style={{ background: "#111", color: "white" }}>
+                Login
+              </Button>
 
               <div style={{ fontSize: 12, opacity: 0.75 }}>
                 Quick picks:
@@ -345,20 +396,41 @@ export default function App() {
           ) : tab === "create" ? (
             <form onSubmit={createTask} style={{ display: "grid", gap: 12 }}>
               <Input label="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
-              <Input label="Description" value={description} onChange={(e) => setDescription(e.target.value)} />
+              <Input
+                label="Description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
               <Input label="Category" value={category} onChange={(e) => setCategory(e.target.value)} />
               <Input label="Price (cents)" value={price} onChange={(e) => setPrice(e.target.value)} />
               <Input label="Address" value={address} onChange={(e) => setAddress(e.target.value)} />
-              <Button type="submit" style={{ background: "#111", color: "white" }}>Create Task</Button>
+              <Button type="submit" style={{ background: "#111", color: "white" }}>
+                Create Task
+              </Button>
             </form>
           ) : (
             <div style={{ display: "grid", gap: 10 }}>
               {isWorker ? (
                 <>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-                    <Button onClick={() => setWorkerView("available")} style={{ background: workerView === "available" ? "#111" : "#444", color: "white" }}>Available</Button>
-                    <Button onClick={() => setWorkerView("assigned")} style={{ background: workerView === "assigned" ? "#111" : "#444", color: "white" }}>My Jobs</Button>
-                    <Button onClick={() => setWorkerView("history")} style={{ background: workerView === "history" ? "#111" : "#444", color: "white" }}>History</Button>
+                    <Button
+                      onClick={() => setWorkerView("available")}
+                      style={{ background: workerView === "available" ? "#111" : "#444", color: "white" }}
+                    >
+                      Available
+                    </Button>
+                    <Button
+                      onClick={() => setWorkerView("assigned")}
+                      style={{ background: workerView === "assigned" ? "#111" : "#444", color: "white" }}
+                    >
+                      My Jobs
+                    </Button>
+                    <Button
+                      onClick={() => setWorkerView("history")}
+                      style={{ background: workerView === "history" ? "#111" : "#444", color: "white" }}
+                    >
+                      History
+                    </Button>
                   </div>
 
                   {workerView === "history" && (
@@ -370,7 +442,9 @@ export default function App() {
                   )}
                 </>
               ) : (
-                <Button onClick={loadMine} style={{ background: "#111", color: "white" }}>Refresh My Tasks</Button>
+                <Button onClick={loadMine} style={{ background: "#111", color: "white" }}>
+                  Refresh My Tasks
+                </Button>
               )}
 
               {tasks.length === 0 ? (
@@ -378,7 +452,16 @@ export default function App() {
               ) : (
                 <>
                   {tasks.map((t) => (
-                    <div key={t.id} style={{ border: "1px solid #eee", borderRadius: 16, padding: 12, display: "grid", gap: 8 }}>
+                    <div
+                      key={t.id}
+                      style={{
+                        border: "1px solid #eee",
+                        borderRadius: 16,
+                        padding: 12,
+                        display: "grid",
+                        gap: 8,
+                      }}
+                    >
                       <div style={statusBadgeStyle(t.status)}>{String(t.status).toUpperCase()}</div>
 
                       <div style={{ display: "grid", gap: 4 }}>
@@ -387,20 +470,30 @@ export default function App() {
                       </div>
 
                       <div style={{ fontSize: 12, display: "flex", justifyContent: "space-between" }}>
-                        <span>Price: <b>{centsToDollars(t.price_cents)}</b></span>
-                        {typeof t.distance_km === "number" && t.distance_km !== 9999 ? <span>{t.distance_km.toFixed(1)} km</span> : null}
+                        <span>
+                          Price: <b>{centsToDollars(t.price_cents)}</b>
+                        </span>
+                        {typeof t.distance_km === "number" && t.distance_km !== 9999 ? (
+                          <span>{t.distance_km.toFixed(1)} km</span>
+                        ) : null}
                       </div>
 
                       <div style={{ fontSize: 12, opacity: 0.85 }}>{t.address}</div>
 
                       {isWorker && workerView === "available" && t.status === "requested" && (
-                        <Button onClick={() => acceptTask(t)} style={{ background: "#111", color: "white" }}>Accept</Button>
+                        <Button onClick={() => acceptTask(t)} style={{ background: "#111", color: "white" }}>
+                          Accept
+                        </Button>
                       )}
                       {isWorker && workerView === "assigned" && t.status === "assigned" && (
-                        <Button onClick={() => startTask(t.id)} style={{ background: "#111", color: "white" }}>Start</Button>
+                        <Button onClick={() => startTask(t.id)} style={{ background: "#111", color: "white" }}>
+                          Start
+                        </Button>
                       )}
                       {isWorker && workerView === "assigned" && t.status === "in_progress" && (
-                        <Button onClick={() => completeTask(t.id)} style={{ background: "#111", color: "white" }}>Complete</Button>
+                        <Button onClick={() => completeTask(t.id)} style={{ background: "#111", color: "white" }}>
+                          Complete
+                        </Button>
                       )}
                     </div>
                   ))}
@@ -411,10 +504,41 @@ export default function App() {
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", borderTop: "1px solid #eee" }}>
-          <button onClick={() => { setMode("user"); setWorkerView("available"); setTab("tasks"); setEmail("user1@example.com"); }} style={{ padding: 14 }}>Tasks</button>
-          <button onClick={() => { setMode("user"); setTab("create"); setEmail("user1@example.com"); }} style={{ padding: 14 }}>Create</button>
-          <button onClick={() => { setMode("worker"); setWorkerView("available"); setTab("tasks"); setEmail("worker1@example.com"); }} style={{ padding: 14 }}>Worker</button>
-          <button onClick={logout} style={{ padding: 14 }}>Logout</button>
+          <button
+            onClick={() => {
+              setMode("user");
+              setWorkerView("available");
+              setTab("tasks");
+              setEmail("user1@example.com");
+            }}
+            style={{ padding: 14 }}
+          >
+            Tasks
+          </button>
+          <button
+            onClick={() => {
+              setMode("user");
+              setTab("create");
+              setEmail("user1@example.com");
+            }}
+            style={{ padding: 14 }}
+          >
+            Create
+          </button>
+          <button
+            onClick={() => {
+              setMode("worker");
+              setWorkerView("available");
+              setTab("tasks");
+              setEmail("worker1@example.com");
+            }}
+            style={{ padding: 14 }}
+          >
+            Worker
+          </button>
+          <button onClick={logout} style={{ padding: 14 }}>
+            Logout
+          </button>
         </div>
       </div>
     </div>

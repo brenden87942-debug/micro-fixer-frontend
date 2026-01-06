@@ -74,6 +74,12 @@ function centsToDollars(cents) {
   return `$${(n / 100).toFixed(2)}`;
 }
 
+// ✅ Pricing: everything is cents in the app
+// fee = 10% of task price
+function calcFee(cents) {
+  return Math.round(Number(cents || 0) * 0.1);
+}
+
 // ✅ Landing screen (built into App.jsx — no extra files)
 function Landing({ onUser, onWorker }) {
   return (
@@ -181,7 +187,7 @@ export default function App() {
   const [title, setTitle] = useState("Fix leaky faucet");
   const [description, setDescription] = useState("Kitchen sink dripping");
   const [category, setCategory] = useState("plumbing");
-  const [price, setPrice] = useState("2500");
+  const [price, setPrice] = useState("2500"); // cents
   const [address, setAddress] = useState("Phoenix, AZ");
 
   const [totalEarnedCents, setTotalEarnedCents] = useState(0);
@@ -237,7 +243,9 @@ export default function App() {
       }
     }
 
-    if (!res.ok || data.ok === false) throw new Error(data?.error || "Request failed");
+    if (!res.ok || data.ok === false) {
+      throw new Error(data?.error || "Request failed");
+    }
     return data;
   }
 
@@ -271,7 +279,7 @@ export default function App() {
     if (!regPassword.trim()) return setMsg("Please enter a password.");
 
     try {
-      const data = await api("/api/auth/register", {
+      await api("/api/auth/register", {
         method: "POST",
         body: JSON.stringify({
           name: regName.trim(),
@@ -442,6 +450,10 @@ export default function App() {
     );
   }
 
+  // ✅ Derived pricing (cents)
+  const serviceFeeCents = calcFee(price);
+  const totalPayCents = Number(price || 0) + serviceFeeCents;
+
   return (
     <div
       style={{
@@ -486,7 +498,13 @@ export default function App() {
 
           {tab === "register" ? (
             <form onSubmit={doRegister} style={{ display: "grid", gap: 12 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 10,
+                }}
+              >
                 <Button
                   type="button"
                   onClick={() => setRegRole("user")}
@@ -511,9 +529,21 @@ export default function App() {
                 </Button>
               </div>
 
-              <Input label="Full Name" value={regName} onChange={(e) => setRegName(e.target.value)} />
-              <Input label="Phone (optional)" value={regPhone} onChange={(e) => setRegPhone(e.target.value)} />
-              <Input label="Email" value={regEmail} onChange={(e) => setRegEmail(e.target.value)} />
+              <Input
+                label="Full Name"
+                value={regName}
+                onChange={(e) => setRegName(e.target.value)}
+              />
+              <Input
+                label="Phone (optional)"
+                value={regPhone}
+                onChange={(e) => setRegPhone(e.target.value)}
+              />
+              <Input
+                label="Email"
+                value={regEmail}
+                onChange={(e) => setRegEmail(e.target.value)}
+              />
               <Input
                 label="Password"
                 type="password"
@@ -528,7 +558,11 @@ export default function App() {
               <Button
                 type="button"
                 onClick={() => setTab("login")}
-                style={{ background: "white", color: "#111", border: "1px solid #111" }}
+                style={{
+                  background: "white",
+                  color: "#111",
+                  border: "1px solid #111",
+                }}
               >
                 Already have an account? Login
               </Button>
@@ -578,9 +612,29 @@ export default function App() {
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
               />
-              <Input label="Category" value={category} onChange={(e) => setCategory(e.target.value)} />
-              <Input label="Price (cents)" value={price} onChange={(e) => setPrice(e.target.value)} />
-              <Input label="Address" value={address} onChange={(e) => setAddress(e.target.value)} />
+              <Input
+                label="Category"
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+              />
+              <Input
+                label="Price (cents)"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+              />
+              <Input
+                label="Address"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+              />
+
+              {/* ✅ Pricing breakdown (User pays price + fee) */}
+              <div style={{ fontSize: 12, opacity: 0.75 }}>
+                Service fee (10%): <b>{centsToDollars(serviceFeeCents)}</b>
+                <br />
+                Total you pay: <b>{centsToDollars(totalPayCents)}</b>
+              </div>
+
               <Button type="submit" style={{ background: "#111", color: "white" }}>
                 Create Task
               </Button>
@@ -589,7 +643,13 @@ export default function App() {
             <div style={{ display: "grid", gap: 10 }}>
               {isWorker ? (
                 <>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr 1fr",
+                      gap: 8,
+                    }}
+                  >
                     <Button
                       onClick={() => setWorkerView("available")}
                       style={{
@@ -632,7 +692,12 @@ export default function App() {
                       <div style={{ fontSize: 20, fontWeight: 900 }}>
                         {centsToDollars(totalEarnedCents)}
                       </div>
-                      <div style={{ fontSize: 12, opacity: 0.7 }}>Sum of completed jobs</div>
+                      <div style={{ fontSize: 12, opacity: 0.7 }}>
+                        Sum of completed jobs
+                      </div>
+                      <div style={{ fontSize: 11, opacity: 0.6, marginTop: 6 }}>
+                        Platform fees are paid by users, not workers
+                      </div>
                     </div>
                   )}
                 </>
@@ -657,14 +722,22 @@ export default function App() {
                         gap: 8,
                       }}
                     >
-                      <div style={statusBadgeStyle(t.status)}>{String(t.status).toUpperCase()}</div>
+                      <div style={statusBadgeStyle(t.status)}>
+                        {String(t.status).toUpperCase()}
+                      </div>
 
                       <div style={{ display: "grid", gap: 4 }}>
                         <b style={{ fontSize: 14 }}>{t.title}</b>
                         <div style={{ fontSize: 12, opacity: 0.9 }}>{t.description}</div>
                       </div>
 
-                      <div style={{ fontSize: 12, display: "flex", justifyContent: "space-between" }}>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          display: "flex",
+                          justifyContent: "space-between",
+                        }}
+                      >
                         <span>
                           Price: <b>{centsToDollars(t.price_cents)}</b>
                         </span>
@@ -673,20 +746,36 @@ export default function App() {
                         ) : null}
                       </div>
 
+                      {/* ✅ Worker sees earnings clearly */}
+                      {isWorker && (
+                        <div style={{ fontSize: 12, opacity: 0.8 }}>
+                          You earn: <b>{centsToDollars(t.price_cents)}</b>
+                        </div>
+                      )}
+
                       <div style={{ fontSize: 12, opacity: 0.85 }}>{t.address}</div>
 
                       {isWorker && workerView === "available" && t.status === "requested" && (
-                        <Button onClick={() => acceptTask(t)} style={{ background: "#111", color: "white" }}>
+                        <Button
+                          onClick={() => acceptTask(t)}
+                          style={{ background: "#111", color: "white" }}
+                        >
                           Accept
                         </Button>
                       )}
                       {isWorker && workerView === "assigned" && t.status === "assigned" && (
-                        <Button onClick={() => startTask(t.id)} style={{ background: "#111", color: "white" }}>
+                        <Button
+                          onClick={() => startTask(t.id)}
+                          style={{ background: "#111", color: "white" }}
+                        >
                           Start
                         </Button>
                       )}
                       {isWorker && workerView === "assigned" && t.status === "in_progress" && (
-                        <Button onClick={() => completeTask(t.id)} style={{ background: "#111", color: "white" }}>
+                        <Button
+                          onClick={() => completeTask(t.id)}
+                          style={{ background: "#111", color: "white" }}
+                        >
                           Complete
                         </Button>
                       )}

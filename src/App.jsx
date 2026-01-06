@@ -74,8 +74,87 @@ function centsToDollars(cents) {
   return `$${(n / 100).toFixed(2)}`;
 }
 
+// ✅ Landing screen (built into App.jsx — no extra files)
+function Landing({ onUser, onWorker }) {
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#f6f7fb",
+        display: "grid",
+        placeItems: "center",
+        padding: 16,
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 420,
+          background: "white",
+          borderRadius: 24,
+          boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
+          padding: 24,
+          display: "grid",
+          gap: 16,
+          textAlign: "center",
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 28, fontWeight: 900, lineHeight: 1.1 }}>
+            Micro Fixer
+          </div>
+          <div style={{ marginTop: 8, opacity: 0.8 }}>Small jobs. Fast help.</div>
+        </div>
+
+        <div style={{ fontSize: 14, opacity: 0.85 }}>
+          Post a task in minutes. Nearby workers accept, start, and complete
+          jobs—all from your phone.
+        </div>
+
+        <button
+          onClick={onUser}
+          style={{
+            padding: 14,
+            borderRadius: 14,
+            border: "none",
+            fontWeight: 800,
+            background: "#111",
+            color: "white",
+            cursor: "pointer",
+          }}
+        >
+          I need help
+        </button>
+
+        <button
+          onClick={onWorker}
+          style={{
+            padding: 14,
+            borderRadius: 14,
+            border: "1px solid #111",
+            fontWeight: 800,
+            background: "white",
+            color: "#111",
+            cursor: "pointer",
+          }}
+        >
+          I want to work
+        </button>
+
+        <div style={{ fontSize: 12, opacity: 0.6, marginTop: 8 }}>
+          Transparent pricing · Local workers · Mobile-first
+        </div>
+
+        <div style={{ fontSize: 11, opacity: 0.55 }}>
+          Tip: Add to your Home Screen for faster access.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
-  const [tab, setTab] = useState("login"); // login | tasks | create
+  const [tab, setTab] = useState("landing"); // landing | login | tasks | create
   const [mode, setMode] = useState("user"); // user | worker
   const [workerView, setWorkerView] = useState("available"); // available | assigned | history
 
@@ -308,6 +387,26 @@ export default function App() {
       : "Worker Mode • History"
     : "User Mode • Mobile-first web app";
 
+  // ✅ Landing page routing (no extra files)
+  if (tab === "landing") {
+    return (
+      <Landing
+        onUser={() => {
+          setMode("user");
+          setWorkerView("available");
+          setEmail("user1@example.com");
+          setTab("login");
+        }}
+        onWorker={() => {
+          setMode("worker");
+          setWorkerView("available");
+          setEmail("worker1@example.com");
+          setTab("login");
+        }}
+      />
+    );
+  }
+
   return (
     <div
       style={{
@@ -391,6 +490,16 @@ export default function App() {
                     Use User (user1@example.com)
                   </Button>
                 </div>
+              </div>
+
+              <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+                <Button
+                  type="button"
+                  onClick={() => setTab("landing")}
+                  style={{ background: "white", color: "#111", border: "1px solid #111" }}
+                >
+                  ← Back
+                </Button>
               </div>
             </form>
           ) : tab === "create" ? (

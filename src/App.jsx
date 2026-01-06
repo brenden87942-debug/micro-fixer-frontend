@@ -32,7 +32,7 @@ function Button({ children, ...props }) {
         borderRadius: 12,
         border: "none",
         fontSize: 14,
-        fontWeight: 700,
+        fontWeight: 800,
         cursor: "pointer",
         ...(props.style || {}),
       }}
@@ -117,7 +117,7 @@ function Landing({ onUser, onWorker }) {
             padding: 14,
             borderRadius: 14,
             border: "none",
-            fontWeight: 800,
+            fontWeight: 900,
             background: "#111",
             color: "white",
             cursor: "pointer",
@@ -132,7 +132,7 @@ function Landing({ onUser, onWorker }) {
             padding: 14,
             borderRadius: 14,
             border: "1px solid #111",
-            fontWeight: 800,
+            fontWeight: 900,
             background: "white",
             color: "#111",
             cursor: "pointer",
@@ -154,7 +154,7 @@ function Landing({ onUser, onWorker }) {
 }
 
 export default function App() {
-  const [tab, setTab] = useState("landing"); // landing | login | tasks | create
+  const [tab, setTab] = useState("landing"); // landing | login | register | tasks | create
   const [mode, setMode] = useState("user"); // user | worker
   const [workerView, setWorkerView] = useState("available"); // available | assigned | history
 
@@ -164,8 +164,16 @@ export default function App() {
   );
   const authed = useMemo(() => !!token, [token]);
 
+  // Login inputs
   const [email, setEmail] = useState("user1@example.com");
   const [password, setPassword] = useState("Pass123!");
+
+  // Register inputs
+  const [regName, setRegName] = useState("");
+  const [regPhone, setRegPhone] = useState("");
+  const [regEmail, setRegEmail] = useState("");
+  const [regPassword, setRegPassword] = useState("");
+  const [regRole, setRegRole] = useState("user"); // user | worker
 
   const [tasks, setTasks] = useState([]);
   const [msg, setMsg] = useState("");
@@ -191,11 +199,6 @@ export default function App() {
     setMsg("Logged out");
   }
 
-  // ✅ Improved API helper:
-  // - attaches Bearer token
-  // - refreshes on HTTP 401 (reliable)
-  // - retries original request once
-  // - logs out cleanly if refresh fails
   async function api(path, options = {}, _retry = false) {
     const doFetch = (tok) =>
       fetch(`${API}${path}`, {
@@ -256,6 +259,39 @@ export default function App() {
       setMsg("Logged in ✅");
     } catch (err) {
       setMsg(`Login failed: ${err.message}`);
+    }
+  }
+
+  async function doRegister(e) {
+    e.preventDefault();
+    setMsg("");
+
+    if (!regName.trim()) return setMsg("Please enter your name.");
+    if (!regEmail.trim()) return setMsg("Please enter an email.");
+    if (!regPassword.trim()) return setMsg("Please enter a password.");
+
+    try {
+      const data = await api("/api/auth/register", {
+        method: "POST",
+        body: JSON.stringify({
+          name: regName.trim(),
+          email: regEmail.trim().toLowerCase(),
+          password: regPassword,
+          phone: regPhone.trim(),
+          role: regRole,
+        }),
+      });
+
+      // after register -> move to login prefilled
+      setEmail(regEmail.trim().toLowerCase());
+      setPassword(regPassword);
+      setMode(regRole === "worker" ? "worker" : "user");
+      setWorkerView("available");
+
+      setMsg("Account created ✅ Please login.");
+      setTab("login");
+    } catch (err) {
+      setMsg(`Register failed: ${err.message}`);
     }
   }
 
@@ -387,20 +423,19 @@ export default function App() {
       : "Worker Mode • History"
     : "User Mode • Mobile-first web app";
 
-  // ✅ Landing page routing (no extra files)
   if (tab === "landing") {
     return (
       <Landing
         onUser={() => {
           setMode("user");
+          setRegRole("user");
           setWorkerView("available");
-          setEmail("user1@example.com");
           setTab("login");
         }}
         onWorker={() => {
           setMode("worker");
+          setRegRole("worker");
           setWorkerView("available");
-          setEmail("worker1@example.com");
           setTab("login");
         }}
       />
@@ -449,7 +484,64 @@ export default function App() {
             </div>
           )}
 
-          {!authed || tab === "login" ? (
+          {tab === "register" ? (
+            <form onSubmit={doRegister} style={{ display: "grid", gap: 12 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <Button
+                  type="button"
+                  onClick={() => setRegRole("user")}
+                  style={{
+                    background: regRole === "user" ? "#111" : "white",
+                    color: regRole === "user" ? "white" : "#111",
+                    border: "1px solid #111",
+                  }}
+                >
+                  User
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => setRegRole("worker")}
+                  style={{
+                    background: regRole === "worker" ? "#111" : "white",
+                    color: regRole === "worker" ? "white" : "#111",
+                    border: "1px solid #111",
+                  }}
+                >
+                  Worker
+                </Button>
+              </div>
+
+              <Input label="Full Name" value={regName} onChange={(e) => setRegName(e.target.value)} />
+              <Input label="Phone (optional)" value={regPhone} onChange={(e) => setRegPhone(e.target.value)} />
+              <Input label="Email" value={regEmail} onChange={(e) => setRegEmail(e.target.value)} />
+              <Input
+                label="Password"
+                type="password"
+                value={regPassword}
+                onChange={(e) => setRegPassword(e.target.value)}
+              />
+
+              <Button type="submit" style={{ background: "#111", color: "white" }}>
+                Create Account
+              </Button>
+
+              <Button
+                type="button"
+                onClick={() => setTab("login")}
+                style={{ background: "white", color: "#111", border: "1px solid #111" }}
+              >
+                Already have an account? Login
+              </Button>
+
+              <Button
+                type="button"
+                onClick={() => setTab("landing")}
+                style={{ background: "white", color: "#111", border: "1px solid #ddd" }}
+              >
+                ← Back
+              </Button>
+            </form>
+          ) : !authed || tab === "login" ? (
             <form onSubmit={doLogin} style={{ display: "grid", gap: 12 }}>
               <Input label="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
               <Input
@@ -462,45 +554,21 @@ export default function App() {
                 Login
               </Button>
 
-              <div style={{ fontSize: 12, opacity: 0.75 }}>
-                Quick picks:
-                <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
-                  <Button
-                    type="button"
-                    onClick={() => {
-                      setMode("worker");
-                      setWorkerView("available");
-                      setEmail("worker1@example.com");
-                      setPassword("Pass123!");
-                    }}
-                    style={{ background: "#444", color: "white" }}
-                  >
-                    Use Worker (worker1@example.com)
-                  </Button>
+              <Button
+                type="button"
+                onClick={() => setTab("register")}
+                style={{ background: "white", color: "#111", border: "1px solid #111" }}
+              >
+                Create an account
+              </Button>
 
-                  <Button
-                    type="button"
-                    onClick={() => {
-                      setMode("user");
-                      setEmail("user1@example.com");
-                      setPassword("Pass123!");
-                    }}
-                    style={{ background: "#444", color: "white" }}
-                  >
-                    Use User (user1@example.com)
-                  </Button>
-                </div>
-              </div>
-
-              <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
-                <Button
-                  type="button"
-                  onClick={() => setTab("landing")}
-                  style={{ background: "white", color: "#111", border: "1px solid #111" }}
-                >
-                  ← Back
-                </Button>
-              </div>
+              <Button
+                type="button"
+                onClick={() => setTab("landing")}
+                style={{ background: "white", color: "#111", border: "1px solid #ddd" }}
+              >
+                ← Back
+              </Button>
             </form>
           ) : tab === "create" ? (
             <form onSubmit={createTask} style={{ display: "grid", gap: 12 }}>
@@ -524,28 +592,46 @@ export default function App() {
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
                     <Button
                       onClick={() => setWorkerView("available")}
-                      style={{ background: workerView === "available" ? "#111" : "#444", color: "white" }}
+                      style={{
+                        background: workerView === "available" ? "#111" : "#444",
+                        color: "white",
+                      }}
                     >
                       Available
                     </Button>
                     <Button
                       onClick={() => setWorkerView("assigned")}
-                      style={{ background: workerView === "assigned" ? "#111" : "#444", color: "white" }}
+                      style={{
+                        background: workerView === "assigned" ? "#111" : "#444",
+                        color: "white",
+                      }}
                     >
                       My Jobs
                     </Button>
                     <Button
                       onClick={() => setWorkerView("history")}
-                      style={{ background: workerView === "history" ? "#111" : "#444", color: "white" }}
+                      style={{
+                        background: workerView === "history" ? "#111" : "#444",
+                        color: "white",
+                      }}
                     >
                       History
                     </Button>
                   </div>
 
                   {workerView === "history" && (
-                    <div style={{ padding: 12, borderRadius: 16, border: "1px solid #eee", fontSize: 13 }}>
+                    <div
+                      style={{
+                        padding: 12,
+                        borderRadius: 16,
+                        border: "1px solid #eee",
+                        fontSize: 13,
+                      }}
+                    >
                       <div style={{ fontWeight: 900, marginBottom: 6 }}>Total Earned</div>
-                      <div style={{ fontSize: 20, fontWeight: 900 }}>{centsToDollars(totalEarnedCents)}</div>
+                      <div style={{ fontSize: 20, fontWeight: 900 }}>
+                        {centsToDollars(totalEarnedCents)}
+                      </div>
                       <div style={{ fontSize: 12, opacity: 0.7 }}>Sum of completed jobs</div>
                     </div>
                   )}
@@ -612,7 +698,13 @@ export default function App() {
           )}
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", borderTop: "1px solid #eee" }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr 1fr 1fr",
+            borderTop: "1px solid #eee",
+          }}
+        >
           <button
             onClick={() => {
               setMode("user");
